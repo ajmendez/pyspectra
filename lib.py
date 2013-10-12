@@ -9,6 +9,7 @@ from scipy import signal
 
 import pysurvey.math
 import pysurvey.plot
+import pysurvey.file
 
 print("Loading Library functions")
 # http://skyserver.sdss3.org/dr9/en/tools/quicklook/quickobj.asp?plate=0282&mjd=51636&fiber=01
@@ -24,9 +25,29 @@ def lazyprop(fn):
     return _lazyprop
 
 
+def Show(fn):
+    def _show(self, *args, **kwargs):
+        noplot = kwargs.pop('noplot', False)
+        quiet = kwargs.pop('quiet', False)
+        tmp = fn(self, *args, **kwargs)
+        if not quiet:
+            self.info()
+        if not noplot:
+            self.plot(**kwargs)
+        return tmp
+    return _show
+
+def Copy(fn):
+    def _copy(self, *args, **kwargs):
+        out = copy.copy(self)
+        return fn(out)
+    return _copy
+        
+
 
 class Spectra(object):
     '''Spectra is a 1d data structure'''
+    @Show
     def __init__(self, filename, ext=0, index=0):
         '''Load the file -- for now only a fits file.'''
         self.filename = filename
@@ -37,8 +58,6 @@ class Spectra(object):
         self.action = 'Initialized'
         self.loaded = False
         self.loadFits()
-        self.info()
-        self.plot()
     
     def __repr__(self):
         '''A simple representation of an object is to just give it a name'''
@@ -91,7 +110,7 @@ class Spectra(object):
         self.raw = copy.copy(self.flux)
     
     def plot(self, **kwargs):
-        
+        '''make the plot of the data'''
         tmp = {
             'xlabel':'Wavelength [{}]'.format(self._wunit),
             'xr': self._wrange,
@@ -104,30 +123,50 @@ class Spectra(object):
         pysurvey.plot.setup(**tmp)
         pylab.plot(self.wave, self.flux)
     
-    
+    @Copy
+    @Show
     def __sub__(self,other):
         '''Subtraction of two Spectra Objects
         TODO: add @show @copy wrappers to simplify'''
-        out = copy.copy(self)
+        # out = copy.copy(self)
+        out = self
         out.action = 'Subtracted'
         out.flux = out.flux - other.flux
-        out.info()
-        out.plot()
+        # out.info()
+        # out.plot()
         return out
     
+    @Copy
+    @Show
     def getSmooth(self, smoothlen, name='boxcar'):
         '''Returns a smoothed spectra given a smoothing length (smoothlen).
         mode = [boxcar], triang, blackman, hamming, hann, bartlett, flattop, parzen, bohman, blackmanharris, nuttall, barthann, ...
         see scipy.signal.get_window()
         
         '''
-        out = copy.copy(self)
+        # out = copy.copy(self)
+        out = self
         window = signal.get_window(name,smoothlen)
         out.flux = signal.convolve(self.flux, window/np.sum(window), mode='same')
         out.action = 'Smoothed'
-        out.info()
-        out.plot()
+        # out.info()
+        # out.plot()
         return out
+    
+    
+    def getLine(self, linename='Lick_Mg2'):
+        '''Get a fit line from the fits file'''
+        linetable = pysurvey.file.Cat(self.filename, 5)
+        ii = np.where(linetable['name'] == linename)
+        line = linetable[ii]
+        r = [line.waveMin,
+             line.waveMax]
+        tmp = {
+            'xr': pysurvey.math.embiggen(r, p=2)
+        }
+        print ''.join(line.__str__().splitlines(True)[1:])
+        self.plot( **tmp)
+        pysurvey.plot.line(x=r)
     
     
     
