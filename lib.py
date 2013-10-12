@@ -14,9 +14,24 @@ print("Loading Library functions")
 # http://skyserver.sdss3.org/dr9/en/tools/quicklook/quickobj.asp?plate=0282&mjd=51636&fiber=01
 
 
+def lazyprop(fn):
+    attr_name = '_lazy_' + fn.__name__
+    @property
+    def _lazyprop(self):
+        if not hasattr(self, attr_name):
+            setattr(self, attr_name, fn(self))
+        return getattr(self, attr_name)
+    return _lazyprop
+
+
+
 class Spectra(object):
-    def __init__(self, filename):
+    '''Spectra is a 1d data structure'''
+    def __init__(self, filename, ext=0, index=0):
+        '''Load the file -- for now only a fits file.'''
         self.filename = filename
+        self.ext = ext
+        self.index = index
         self.simplefilename = os.path.basename(self.filename)
         self.name = self.simplefilename
         self.action = 'Initialized'
@@ -26,57 +41,61 @@ class Spectra(object):
         self.plot()
     
     def __repr__(self):
+        '''A simple representation of an object is to just give it a name'''
         return 'Spectra Object for {}'.format(self.name)
     
-    def name(self):
-        '''Return a simple name for the object'''
-        return self.name
-    
-    def wunit(self):
+    @lazyprop
+    def _wunit(self):
         '''Wavelength units'''
         return self.header['WAT1_001'].split('=')[-1]
-    def wrange(self):
+    
+    @lazyprop
+    def _wrange(self):
         ii = np.where(self.flux > 0)
         xr = [np.min(self.wave[ii]), np.max(self.wave[ii])]
         return pysurvey.math.embiggen(xr,p=0.05)
-        
-    def funit(self):
+    
+    @lazyprop
+    def _funit(self):
         return self.header['BUNIT']
-    def frange(self):
+    
+    @lazyprop
+    def _frange(self):
         yr = [0, np.max(self.flux)]
         return pysurvey.math.embiggen(yr,p=0.10, mode='upper')
         
     
     def info(self):
         '''Read some information from the header to inform the user'''
-        print '''{}: {} [{}]
- | RA/DEC: {}, {}
+        print '''{}: {}  [{}]
  | Wavelength Coverage: [{:0.2f}, {:0.2f}] {}
  | Flux Units: {}'''.format(
-     self.action, self.name, self.simplefilename,
-     self.header['RA'], self.header['DEC'],
-     np.min(self.wave), np.max(self.wave), self.wunit(),
-     self.funit(),
+     self.action, self.name, 
+     # self.header['RA'], self.header['DEC'], 
+     self.simplefilename,
+     np.min(self.wave), np.max(self.wave), self._wunit,
+     self._funit,
      )
     
     def loadFits(self):
         '''Grab the data'''
         self.header = pyfits.getheader(self.filename)
-        self.data = pyfits.getdata(self.filename)
+        self.data = pyfits.getdata(self.filename, self.ext)
         self.name = self.header['NAME']
         self.action = 'Loaded'
         
         self.wave = 10**(self.header['COEFF0']+
                          self.header['COEFF1']*
                          np.arange(0, self.header['NAXIS1']))
-        self.flux = self.data[0]
+        self.flux = self.data[self.index]
+        self.raw = copy.copy(self.flux)
     
     def plot(self, **kwargs):
         
         tmp = {
-            'xlabel':'Wavelength [{}]'.format(self.wunit()),
-            'xr': self.wrange(),
-            'ylabel': 'Flux [{}]'.format(self.funit()),
+            'xlabel':'Wavelength [{}]'.format(self._wunit),
+            'xr': self._wrange,
+            'ylabel': 'Flux [{}]'.format(self._funit),
             # 'yr': self.frange(),
         }
         tmp.update(kwargs)
@@ -109,11 +128,6 @@ class Spectra(object):
         out.info()
         out.plot()
         return out
-    
-    def fitEV(self, wcenter, wrange):
-        pass
-        
-
     
     
     
