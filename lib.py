@@ -40,7 +40,7 @@ def Show(fn):
 def Copy(fn):
     def _copy(self, *args, **kwargs):
         out = copy.copy(self)
-        return fn(out)
+        return fn(out, *args, **kwargs)
     return _copy
         
 
@@ -55,28 +55,26 @@ class Spectra(object):
         self.index = index
         self.simplefilename = os.path.basename(self.filename)
         self.name = self.simplefilename
-        self.action = 'Initialized'
-        self.loaded = False
-        self.loadFits()
+        
+        self.header = pyfits.getheader(self.filename)
+        self.data = pyfits.getdata(self.filename, self.ext)
+        if 'SDSS' in self.header['TELESCOP']:
+            self.loadSdss()
+        else:
+            self.loadSpex()
+        
+        self.action = 'Loaded'
+        
     
     def __repr__(self):
         '''A simple representation of an object is to just give it a name'''
         return 'Spectra Object for {}'.format(self.name)
     
     @lazyprop
-    def _wunit(self):
-        '''Wavelength units'''
-        return self.header['WAT1_001'].split('=')[-1]
-    
-    @lazyprop
     def _wrange(self):
         ii = np.where(self.flux > 0)
         xr = [np.min(self.wave[ii]), np.max(self.wave[ii])]
         return pysurvey.math.embiggen(xr,p=0.05)
-    
-    @lazyprop
-    def _funit(self):
-        return self.header['BUNIT']
     
     @lazyprop
     def _frange(self):
@@ -92,29 +90,36 @@ class Spectra(object):
      self.action, self.name, 
      # self.header['RA'], self.header['DEC'], 
      self.simplefilename,
-     np.min(self.wave), np.max(self.wave), self._wunit,
-     self._funit,
+     np.min(self.wave), np.max(self.wave), self.wunit,
+     self.funit,
      )
     
-    def loadFits(self):
-        '''Grab the data'''
-        self.header = pyfits.getheader(self.filename)
-        self.data = pyfits.getdata(self.filename, self.ext)
-        self.name = self.header['NAME']
-        self.action = 'Loaded'
+    
+    def loadSpex(self):
+        self.name = self.header['OBJECT']
+        self.wave = self.data[0,:]
+        self.wunit = self.header['XUNITS']
+        self.flux = self.data[1,:]
+        self.funit = self.header['YUNITS']
         
+        
+    
+    def loadSdss(self):
+        '''Grab the data'''
+        self.name = self.header['NAME']
         self.wave = 10**(self.header['COEFF0']+
                          self.header['COEFF1']*
                          np.arange(0, self.header['NAXIS1']))
+        self.wunit = self.header['WAT1_001'].split('=')[-1]
         self.flux = self.data[self.index]
-        self.raw = copy.copy(self.flux)
-    
+        self.funit = self.header['BUNIT']
+        
     def plot(self, **kwargs):
         '''make the plot of the data'''
         tmp = {
-            'xlabel':'Wavelength [{}]'.format(self._wunit),
+            'xlabel':'Wavelength [{}]'.format(self.wunit),
             'xr': self._wrange,
-            'ylabel': 'Flux [{}]'.format(self._funit),
+            'ylabel': 'Flux [{}]'.format(self.funit),
             # 'yr': self.frange(),
         }
         tmp.update(kwargs)
